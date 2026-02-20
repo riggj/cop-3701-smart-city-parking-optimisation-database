@@ -4,4 +4,4 @@ This project is dedicated to making a system by which cars can find parking spot
 
 The User groups for this would be drivers, parking administrators, and system operators.
 
-Data source: [http://kaggle.com/datasets/datasetengineer/smart-parking-management-dataset]
+Data source: http://kaggle.com/datasets/datasetengineer/smart-parking-management-dataset
