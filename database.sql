@@ -1,6 +1,7 @@
 -- =====================================================
 -- SMART PARKING MANAGEMENT SYSTEM
 -- CSV-ALIGNED & BCNF NORMALIZED
+-- DUPLICATE-SAFE VERSION
 -- =====================================================
 
 CREATE DATABASE IF NOT EXISTS smart_parking;
@@ -38,13 +39,18 @@ CREATE TABLE ParkingData_Staging (
     User_Type VARCHAR(50)
 );
 
--- Load CSV into staging (relative path)
+-- =====================================================
+-- LOAD CSV INTO STAGING
+-- =====================================================
+-- Make sure the CSV is in the same folder as this SQL file.
 LOAD DATA LOCAL INFILE 'IIoT_Smart_Parking_Management.csv'
 INTO TABLE ParkingData_Staging
 FIELDS TERMINATED BY ','
 ENCLOSED BY '"'
 LINES TERMINATED BY '\n'
-IGNORE 1 ROWS;
+IGNORE 1 ROWS
+(Timestamp, Parking_Spot_ID, Entry_Time, Exit_Time, Reserved_Status, Payment_Amount, 
+ Parking_Lot_Section, Occupancy_Status, Spot_Size, User_Type);
 
 -- =====================================================
 -- NORMALIZED TABLES (BCNF)
@@ -104,23 +110,22 @@ CREATE TABLE AvailabilityRecord (
 );
 
 -- =====================================================
--- POPULATE NORMALIZED TABLES
+-- POPULATE NORMALIZED TABLES (DUPLICATE-SAFE)
 -- =====================================================
 
 -- Insert all lots
-INSERT INTO ParkingLot (Zone)
+INSERT IGNORE INTO ParkingLot (Zone)
 SELECT DISTINCT Parking_Lot_Section
 FROM ParkingData_Staging
-WHERE Parking_Lot_Section IS NOT NULL
-  AND Parking_Lot_Section NOT IN (SELECT Zone FROM ParkingLot);
+WHERE Parking_Lot_Section IS NOT NULL;
 
--- Insert a default lot for any missing spots
-INSERT INTO ParkingLot (Zone)
+-- Insert a default lot for missing spots
+INSERT IGNORE INTO ParkingLot (Zone)
 SELECT 'DEFAULT_LOT'
 WHERE NOT EXISTS (SELECT 1 FROM ParkingLot WHERE Zone='DEFAULT_LOT');
 
 -- Insert all parking spots
-INSERT INTO ParkingSpot (SpotID, SpotType, Status, LotID)
+INSERT IGNORE INTO ParkingSpot (SpotID, SpotType, Status, LotID)
 SELECT DISTINCT
     s.Parking_Spot_ID,
     s.Spot_Size,
@@ -128,25 +133,22 @@ SELECT DISTINCT
     COALESCE(l.LotID, (SELECT LotID FROM ParkingLot WHERE Zone='DEFAULT_LOT'))
 FROM ParkingData_Staging s
 LEFT JOIN ParkingLot l
-ON s.Parking_Lot_Section = l.Zone
-WHERE s.Parking_Spot_ID NOT IN (SELECT SpotID FROM ParkingSpot);
+ON s.Parking_Lot_Section = l.Zone;
 
 -- Insert Drivers
-INSERT INTO Driver (UserType)
+INSERT IGNORE INTO Driver (UserType)
 SELECT DISTINCT User_Type
 FROM ParkingData_Staging
-WHERE User_Type IS NOT NULL
-  AND User_Type NOT IN (SELECT UserType FROM Driver);
+WHERE User_Type IS NOT NULL;
 
 -- Insert Sensors (1 per spot)
-INSERT INTO Sensor (SpotID)
+INSERT IGNORE INTO Sensor (SpotID)
 SELECT DISTINCT Parking_Spot_ID
 FROM ParkingData_Staging
-WHERE Parking_Spot_ID IN (SELECT SpotID FROM ParkingSpot)
-  AND Parking_Spot_ID NOT IN (SELECT SpotID FROM Sensor);
+WHERE Parking_Spot_ID IN (SELECT SpotID FROM ParkingSpot);
 
 -- Insert Reservations
-INSERT INTO Reservation (StartTime, EndTime, Status, DriverID, SpotID)
+INSERT IGNORE INTO Reservation (StartTime, EndTime, Status, DriverID, SpotID)
 SELECT
     s.Entry_Time,
     s.Exit_Time,
@@ -159,7 +161,7 @@ WHERE s.Reserved_Status IS NOT NULL
   AND s.Parking_Spot_ID IN (SELECT SpotID FROM ParkingSpot);
 
 -- Insert Parking Events
-INSERT INTO ParkingEvent (EntryTime, ExitTime, FeeCharged, DriverID, SpotID)
+INSERT IGNORE INTO ParkingEvent (EntryTime, ExitTime, FeeCharged, DriverID, SpotID)
 SELECT
     s.Entry_Time,
     s.Exit_Time,
@@ -172,7 +174,7 @@ WHERE s.Entry_Time IS NOT NULL
   AND s.Parking_Spot_ID IN (SELECT SpotID FROM ParkingSpot);
 
 -- Insert Availability Records
-INSERT INTO AvailabilityRecord (SpotID, RecordTimestamp, AvailabilityStatus)
+INSERT IGNORE INTO AvailabilityRecord (SpotID, RecordTimestamp, AvailabilityStatus)
 SELECT
     Parking_Spot_ID,
     Timestamp,
