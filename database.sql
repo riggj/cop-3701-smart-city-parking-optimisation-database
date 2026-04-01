@@ -1,15 +1,7 @@
--- =====================================================
--- SMART PARKING MANAGEMENT SYSTEM
--- CSV-ALIGNED & BCNF NORMALIZED
--- DUPLICATE-SAFE VERSION
--- =====================================================
-
 CREATE DATABASE IF NOT EXISTS smart_parking;
 USE smart_parking;
 
--- =====================================================
--- DROP EXISTING TABLES
--- =====================================================
+-- drop existing tables
 SET FOREIGN_KEY_CHECKS = 0;
 
 DROP TABLE IF EXISTS AvailabilityRecord;
@@ -23,9 +15,7 @@ DROP TABLE IF EXISTS ParkingData_Staging;
 
 SET FOREIGN_KEY_CHECKS = 1;
 
--- =====================================================
--- STAGING TABLE
--- =====================================================
+-- staging table
 CREATE TABLE ParkingData_Staging (
     Timestamp DATETIME,
     Parking_Spot_ID INT,
@@ -39,9 +29,7 @@ CREATE TABLE ParkingData_Staging (
     User_Type VARCHAR(50)
 );
 
--- =====================================================
 -- LOAD CSV INTO STAGING
--- =====================================================
 -- Make sure the CSV is in the same folder as this SQL file.
 LOAD DATA LOCAL INFILE 'IIoT_Smart_Parking_Management.csv'
 INTO TABLE ParkingData_Staging
@@ -52,9 +40,7 @@ IGNORE 1 ROWS
 (Timestamp, Parking_Spot_ID, Entry_Time, Exit_Time, Reserved_Status, Payment_Amount, 
  Parking_Lot_Section, Occupancy_Status, Spot_Size, User_Type);
 
--- =====================================================
 -- NORMALIZED TABLES (BCNF)
--- =====================================================
 CREATE TABLE ParkingLot (
     LotID INT PRIMARY KEY AUTO_INCREMENT,
     Zone VARCHAR(50) UNIQUE
@@ -183,9 +169,7 @@ FROM ParkingData_Staging
 WHERE Timestamp IS NOT NULL
   AND Parking_Spot_ID IN (SELECT SpotID FROM ParkingSpot);
 
--- =====================================================
 -- VERIFICATION
--- =====================================================
 SELECT COUNT(*) AS ParkingLotCount FROM ParkingLot;
 SELECT COUNT(*) AS ParkingSpotCount FROM ParkingSpot;
 SELECT COUNT(*) AS DriverCount FROM Driver;
