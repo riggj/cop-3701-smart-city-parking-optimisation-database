@@ -95,10 +95,7 @@ CREATE TABLE AvailabilityRecord (
     FOREIGN KEY (SpotID) REFERENCES ParkingSpot(SpotID)
 );
 
--- =====================================================
 -- POPULATE NORMALIZED TABLES (DUPLICATE-SAFE)
--- =====================================================
-
 -- Insert all lots
 INSERT IGNORE INTO ParkingLot (Zone)
 SELECT DISTINCT Parking_Lot_Section
