@@ -1,121 +1,63 @@
+import mysql.connector
 import pandas as pd
-import os
 
-# initial definitions
-RAW_CSV = 'IIoT_Smart_Parking_Management.csv'
-CSV_DIR = 'csv'
-os.makedirs(CSV_DIR, exist_ok=True)
+db = mysql.connector.connect(
+    host = "localhost",
+    user = "K9xL2qR5v",
+    password = "P7mK9xL2qR5vN3wJH8bF",
+    database = "smart_parking"
+)
 
+cursor = db.cursor()
 
-def generate_parking_lots(df):
-
-    lots = df[['Parking_Lot_Section']].drop_duplicates().reset_index(drop=True)
-    lots['LotID'] = lots.index + 1
+def load_csv(file, table):
+    df = pd.read_csv(file)
     
-    lots = lots.rename(columns={
-        'Parking_Lot_Section': 'Zone'
-    })
+    # Remove duplicates based on primary key columns
+    if table == "ParkingSpot":
+        df = df.drop_duplicates(subset=['SpotID'], keep='first')
+    elif table == "Sensor":
+        df = df.drop_duplicates(subset=['SpotID'], keep='first')
+    elif table == "AvailabilityRecord":
+        df = df.drop_duplicates(subset=['SpotID', 'RecordTimestamp'], keep='first')
     
-    lots.to_csv(os.path.join(CSV_DIR, 'ParkingLot.csv'), index=False)
-    return lots
-
-
-def generate_drivers(df):
-
-    drivers = df[['User_Type']].drop_duplicates().reset_index(drop=True)
-    drivers['DriverID'] = drivers.index + 1
+    # Build column names and placeholders
+    columns = ', '.join(df.columns)
+    placeholders = ','.join(['%s'] * len(df.columns))
+    sql = f"INSERT INTO {table} ({columns}) VALUES ({placeholders})"
     
-    drivers = drivers.rename(columns={
-        'User_Type': 'UserType'
-    })
+    skipped = 0
+    for idx, row in df.iterrows():
+        try:
+            cursor.execute(sql, tuple(row))
+        except Exception as e:
+            skipped += 1
     
-    drivers.to_csv(os.path.join(CSV_DIR, 'Driver.csv'), index=False)
-    return drivers
+    db.commit()
+    if skipped > 0:
+        print(f"{table} loaded ({len(df) - skipped} rows, {skipped} skipped)")
+    else:
+        print(f"{table} loaded")
 
+# Clear existing data first (respecting foreign key dependencies)
+cursor.execute("SET FOREIGN_KEY_CHECKS = 0")
+cursor.execute("TRUNCATE TABLE AvailabilityRecord")
+cursor.execute("TRUNCATE TABLE ParkingEvent")
+cursor.execute("TRUNCATE TABLE Reservation")
+cursor.execute("TRUNCATE TABLE Sensor")
+cursor.execute("TRUNCATE TABLE ParkingSpot")
+cursor.execute("TRUNCATE TABLE Driver")
+cursor.execute("TRUNCATE TABLE ParkingLot")
+cursor.execute("SET FOREIGN_KEY_CHECKS = 1")
 
-def generate_parking_spots(df, lot_map):
+# Load CSV files in order of foreign key dependencies
+load_csv("csv/ParkingLot.csv", "ParkingLot")
+load_csv("csv/Driver.csv", "Driver")
+load_csv("csv/ParkingSpot.csv", "ParkingSpot")
+load_csv("csv/Sensor.csv", "Sensor")
+load_csv("csv/Reservation.csv", "Reservation")
+load_csv("csv/ParkingEvent.csv", "ParkingEvent")
+load_csv("csv/AvailabilityRecord.csv", "AvailabilityRecord")
 
-    spots = df[['Parking_Spot_ID', 'Spot_Size', 'Occupancy_Status', 'Parking_Lot_Section']].drop_duplicates()
-    spots['LotID'] = spots['Parking_Lot_Section'].map(lambda x: lot_map.get(x, 1))  # default LotID=1
-
-    spots = spots.rename(columns={
-        'Parking_Spot_ID':  'SpotID',
-        'Spot_Size':        'SpotType',
-        'Occupancy_Status': 'Status'
-    })
-    
-    spots = spots[['SpotID', 'SpotType', 'Status', 'LotID']]
-    spots.to_csv(os.path.join(CSV_DIR, 'ParkingSpot.csv'), index=False)
-    return spots
-
-
-def generate_sensors(spots):
-    
-    sensors = spots[['SpotID']].drop_duplicates()
-    sensors.to_csv(os.path.join(CSV_DIR, 'Sensor.csv'), index=False)
-
-
-def generate_reservations(df, driver_map):
-    
-    reservations = df[df['Reserved_Status'].notna()].copy()
-    reservations['DriverID'] = reservations['User_Type'].map(driver_map)
-    
-    reservations = reservations.rename(columns={
-        'Entry_Time':      'StartTime',
-        'Exit_Time':       'EndTime',
-        'Reserved_Status': 'Status',
-        'Parking_Spot_ID': 'SpotID'
-    })
-
-    reservations = reservations[['StartTime', 'EndTime', 'Status', 'DriverID', 'SpotID']]
-    reservations.to_csv(os.path.join(CSV_DIR, 'Reservation.csv'), index=False)
-
-
-def generate_parking_events(df, driver_map):
-    
-    events = df[df['Entry_Time'].notna()].copy()
-    events['DriverID'] = events['User_Type'].map(driver_map)
-    
-    events = events.rename(columns={
-        'Entry_Time':      'EntryTime',
-        'Exit_Time':       'ExitTime',
-        'Payment_Amount':  'FeeCharged',
-        'Parking_Spot_ID': 'SpotID'
-    })
-    
-    events = events[['EntryTime', 'ExitTime', 'FeeCharged', 'DriverID', 'SpotID']]
-    events.to_csv(os.path.join(CSV_DIR, 'ParkingEvent.csv'), index=False)
-
-
-def generate_availabilities(df):
-    
-    availability = df[df['Timestamp'].notna()].copy()
-    
-    availability = availability.rename(columns={
-        'Parking_Spot_ID':  'SpotID',
-        'Timestamp':        'RecordTimestamp',
-        'Occupancy_Status': 'AvailabilityStatus'
-    })
-
-    availability = availability[['SpotID', 'RecordTimestamp', 'AvailabilityStatus']]
-    availability.to_csv(os.path.join(CSV_DIR, 'AvailabilityRecord.csv'), index=False)
-
-
-def main():
-    df = pd.read_csv(RAW_CSV)
-    print("[INFO] Raw CSV loaded.")
-
-    lots    = generate_parking_lots(df)
-    drivers = generate_drivers(df)
-    spots   = generate_parking_spots(df, dict(zip(lots['Zone'], lots['LotID'])))
-    
-    generate_sensors(spots)
-    generate_reservations(df, dict(zip(drivers['UserType'], drivers['DriverID'])))
-    generate_parking_events(df, dict(zip(drivers['UserType'], drivers['DriverID'])))
-    generate_availabilities(df)
-
-    print("[INFO] All normalized CSV files generated in 'csv/' folder.")
-
-
-if __name__ == "__main__":
-    main()
+cursor.close()
+db.close()
